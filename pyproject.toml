@@ -1,0 +1,30 @@
+[tool.poetry]
+name = "ibd"
+version = "0.1.0"
+description = ""
+authors = ["Pat Chormai <pat.chormai@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "3.9.0"
+# from https://download.pytorch.org/whl/cpu/torch_stable.html
+#torch = { path = "/home/pat/Downloads/torch-0.3.1-cp36-cp36m-macosx_10_7_x86_64.whl" }
+#torchvision = "0.2.1"
+numpy = "^1.26.2"
+scipy = "^1.11.3"
+scikit-image = "^0.22.0"
+matplotlib = "^3.8.1"
+easydict = "^1.11"
+scikit-learn = "^1.3.2"
+
+torch = "1.9.0"
+torchvision = "0.10.0"
+opencv-python = "^4.8.1.78"
+zennit = "^0.5.1"
+
+[tool.poetry.group.dev.dependencies]
+jupyter = "^1.0.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
