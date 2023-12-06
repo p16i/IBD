@@ -41,7 +41,7 @@ def loadmodel():
             if settings.MODEL_FILE is None:
                 model = torchvision.models.__dict__[settings.CNN_MODEL](pretrained=True)
             else:
-                checkpoint = torch.load(settings.MODEL_FILE)
+                checkpoint = torch.load(settings.MODEL_FILE, map_location=torch.device("cpu"))
                 if type(checkpoint).__name__ == 'OrderedDict' or type(checkpoint).__name__ == 'dict':
                     model = torchvision.models.__dict__[settings.CNN_MODEL](num_classes=settings.NUM_CLASSES)
                     if settings.MODEL_PARALLEL:

@@ -2,11 +2,12 @@ import torch
 import numpy as np
 import random
 import os
+import torch
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.data.dataloader import default_collate
 from torch.utils.data.sampler import Sampler, SubsetRandomSampler
 from loader.data_loader import SegmentationPrefetcher
-from scipy.misc import imresize
+from skimage.transform import resize as imresize
 import settings
 import math
 
@@ -41,7 +42,7 @@ class FeatureDataset(Dataset):
                         pixels.append(label_group)
 
                 for i, pixel in enumerate(pixels):
-                    pixels[i] = imresize(pixel[0], (settings.SEG_RESOLUTION, settings.SEG_RESOLUTION), interp='nearest', mode='F').astype(int)
+                    pixels[i] = imresize(pixel[0], (settings.SEG_RESOLUTION, settings.SEG_RESOLUTION), mode='F').astype(int)
 
                 labels = np.array(pixels)
                 if len(labels) == 2:
@@ -108,32 +109,58 @@ class ConceptDataset(Dataset):
         self.labels = [None] * b
         self.concept_indexes = [set() for _ in range(concept_size)]
         self.label_size = concept_size
+        self.minlength = len(seg_data.label)
         self.generate_label((b, u, h, w), feat_name, seg_data)
         self.concept_count = np.zeros(len(seg_data.label), dtype=np.int32)
-        for label in self.labels:
-            self.concept_count += np.bincount(label.ravel(), minlength=len(seg_data.label))
+        for lix, label in enumerate(self.labels):  
+            count = np.bincount(label.ravel(), minlength=len(seg_data.label))
+            print(f"[lix={lix}] labels={count.nonzero()}")
+            self.concept_count += count
+        # assert len(names) == len(set(names))
         self.concept_count[0] = 0
 
     def generate_label(self, shape, feature_name, seg_data):
         b, u, h, w = shape
         img_ind = 0
-        filename = os.path.join(settings.OUTPUT_FOLDER, "%s-concept-map.npy" % feature_name)
+        filename = os.path.join(settings.OUTPUT_FOLDER, "%s-concept-map.npz" % feature_name)
         if os.path.exists(filename):
             print("loading concept index map ...")
-            self.concept_indexes, self.labels = np.load(filename)
+            content = np.load(filename)
+            self.concept_indexes = content["index"]
+            self.labels = content["label"]
             return
 
         print("generating concept index map ...")
         pd = SegmentationPrefetcher(seg_data, categories=seg_data.category_names(),
                                     once=True, batch_size=settings.TALLY_BATCH_SIZE,
                                     ahead=settings.TALLY_AHEAD)
+
+        print("seg_data:", seg_data.category_names())
         for batch in pd.batches():
             print("handling image index %d" % img_ind)
+
+            # print(batch)
+            # raise
             for concept_map in batch:
                 scalars, pixels = [], []
+                # print(concept_map)
                 for cat in seg_data.category_names():
                     label_group = concept_map[cat]
+                    if type(label_group) == list:
+                        if len(label_group) == 0:
+                            continue
+                        else:
+                            raise
+
+                    # print(f"[cat={cat}]: {type(label_group)}")
+                    # print(label_group)
+                    # .squeeze()
+                    label_group = label_group.squeeze()
+                    # print(f"[cat={cat}]: shape={label_group.shape}")
+                    # print(f"max-value={np.max(label_group)} (minleng={self.minlength})")
+                    assert np.max(label_group)  < self.minlength, f"max={np.max(label_group)}, minlength={self.minlength}"
                     shape = np.shape(label_group)
+                    # raise
                     if len(shape) % 2 == 0:
                         label_group = [label_group]
                     if len(shape) < 2:
@@ -142,6 +169,7 @@ class ConceptDataset(Dataset):
                         pixels.append(label_group)
 
                 if settings.SINGLE_LABEL:
+                    raise ValueError("We should not be here!")
                     if pixels:
                         pixel = imresize(pixels[0][0], (h, w), interp='nearest', mode='F').astype(int)
                         self.labels[img_ind] = pixel
@@ -159,23 +187,37 @@ class ConceptDataset(Dataset):
                 else:
                     if len(pixels) >= 1:
                         pixels = np.concatenate(pixels, 0)
+                        # print(f"pixels.shape={pixels.shape}; h={h}, w={w}")
                         pixel_sm = np.zeros((len(pixels), h, w), dtype=np.int16)
+                        # np.save("./tmp/pixels.npy", pixels)
                         for i in range(len(pixels)):
                             # ty, tx = (np.arange(ts) for ts in (h, w))
                             # sy, sx = (np.arange(ss) * s + o for ss, s, o in zip(pixels[i].shape, (4, 4), (5, 5)))
                             # from scipy.interpolate import RectBivariateSpline
                             # levels = RectBivariateSpline(sy, sx, pixels[i], kx=1, ky=1)(ty, tx, grid=True)
-                            pixel_sm[i] = imresize(pixels[i], (h, w), interp='nearest', mode='F').astype(int)
+                            # pixel_sm[i] = imresize(pixels[i], (h, w))
+                            pixel_sm[i] = torch.nn.functional.interpolate(torch.from_numpy(pixels[i][None, None, :, :]).float(), (h, w), mode="nearest").numpy().squeeze()
+                            # .astype(int)
+                            # np.save(f"./tmp/pixels-{i}.npy", pixel_sm[i])
                             for hi in range(h):
                                 for wi in range(w):
                                     if pixel_sm[i][hi, wi]:
                                         self.concept_indexes[pixel_sm[i][hi, wi]].add((img_ind, hi, wi))
+                        
                         self.labels[img_ind] = pixel_sm
+                        # print(np.bincount(pixel_sm.ravel(), minlength=self.minlength).nonzero())
+                        # raise
+
                 img_ind += 1
+            if img_ind > 500 and False:
+                break
 
         for label in range(self.label_size):
             self.concept_indexes[label] = np.array(list(self.concept_indexes[label]))
-        np.save(filename, (self.concept_indexes, self.labels))
+        
+        # print(self.concept_indexes)
+        # raise
+        # np.savez(filename, index=self.concept_indexes, label=self.labels)
 
     def getitem_by_seqind(self, index):
         x = torch.Tensor(self.feat[index])

@@ -3,7 +3,8 @@ import os
 import torch
 from torch.autograd import Variable as V
 import torch.nn as nn
-from scipy.misc import imresize, imread, imsave
+# from scipy.misc import imresize, imread, imsave
+from skimage.transform import resize as imresize 
 
 import pickle
 from sklearn.manifold import TSNE, SpectralEmbedding
@@ -231,10 +232,10 @@ class FeatureOperator:
             input_var = input_var.cuda()
         model.cnn.forward(input_var)
         img_feat = features_blobs[0]
-        v = V(torch.from_numpy(img_feat).cuda(async=True), requires_grad=True)
-        q = V(q.cuda(async=True), requires_grad=False)
+        v = V(torch.from_numpy(img_feat).cuda(), requires_grad=True)
+        q = V(q.cuda(), requires_grad=False)
         # a = V(a.cuda(async=True), requires_grad=False)
-        q_len = V(q_len.cuda(async=True), requires_grad=False)
+        q_len = V(q_len.cuda(), requires_grad=False)
         out = model(v, q, q_len)
         val, ind = out.max(1)
         val.backward(torch.FloatTensor([1]).cuda())
@@ -258,7 +259,7 @@ class FeatureOperator:
             input_var = input_var.cuda()
         model.cnn.forward(input_var)
         img_feat = features_blobs[0]
-        v = V(torch.from_numpy(img_feat).cuda(async=True), requires_grad=True)
+        v = V(torch.from_numpy(img_feat).cuda(), requires_grad=True)
         sents, caps = model.generate(input_var)
         out, _ = model(input_var, sents[0])
         sents = np.array(sents).ravel()
@@ -281,6 +282,7 @@ class FeatureOperator:
 
     def single_feature_extraction(self, model, org_img):
         del features_blobs[:]
+        org_img = org_img.copy()
         img = np.array(org_img, dtype=np.float32)
         if (img.ndim == 2):
             img = np.repeat(img[:, :, None], 3, axis=2)
@@ -312,7 +314,8 @@ class FeatureOperator:
             if torch.__version__.startswith('0.4'):
                 prediction = places365_categories[out.max(1)[1].item()]
             else:
-                prediction = places365_categories[out.max(1)[1].data[0]]
+                label = int(out.max(1)[1].data[0].numpy())
+                prediction = places365_categories[label]
 
         del grad_blobs[:]
         model.zero_grad()
@@ -345,12 +348,13 @@ class FeatureOperator:
         weight_label, weight_concept = self.weight_extraction(model, feat_clf)
         filename = os.path.join(settings.OUTPUT_FOLDER, "decompose.npy")
         if os.path.exists(filename):
-            rankings, errvar, coefficients, residuals_T = np.load(filename)
+            rankings, errvar, coefficients, residuals_T = np.load(filename, allow_pickle=True)
         else:
             rankings, errvar, coefficients, residuals = self.decompose_Gram_Schmidt(weight_concept, weight_label, prediction_ind=None, MAX=settings.BASIS_NUM)
             np.save(filename, (rankings, errvar, coefficients, residuals.T))
             # for i in range(len(weight_label)):
             #     residuals[i] = weight_label[i] - np.matmul(ws[i][None, :], weight_concept[rankings[i, :].astype(int)])
+        print("Valid_concepts", feat_clf.valid_concepts)
 
         if settings.COMPRESSED_INDEX:
             try:

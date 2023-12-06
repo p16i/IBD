@@ -173,14 +173,22 @@ class SingleSigmoidFeatureClassifier(FeatureClassifier):
     def __init__(self, feature=None, layer=None, fo=None):
         super(SingleSigmoidFeatureClassifier, self).__init__()
 
+        print("fo.data.label", fo.data.label, len(fo.data.label))
+
+        # raise
+
         self.dataset = ConceptDataset(feature, layer, fo.data, len(fo.data.label), )
-        # self.feat_loader = feature_loader(feature, layer, fo.data, len(fo.data.label))
+        self.feat_loader = feature_loader(feature, layer, fo.data, len(fo.data.label))
         self.loader_factory = concept_loader_factory(feature, layer, fo.data, len(fo.data.label), concept_dataset=self.dataset)
-        self.valid_concepts = self.dataset.concept_count.nonzero()[0]
+        self.valid_concepts =  self.dataset.concept_count.nonzero()[0]
+        # list(map(lambda c: "concept-{c}", range(660)))
         self.feat = feature
         self.layer_name = layer
         self.fo = fo
         self.concept_size = len(self.valid_concepts)
+        np.testing.assert_equal(
+            len(self.valid_concepts), 660
+        )
         self.display_epoch = 100
         if feature is None:
             self.fc = IndexLinear(1024, 660)

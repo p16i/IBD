@@ -1,5 +1,7 @@
+import torch
 ######### global settings  #########
-GPU = True                                                                   # running on GPU is highly suggested
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+GPU = False                                                                  # running on GPU is highly suggested
 CLEAN = False                                                                # set to "True" if you want to clean the temporary large files after generating result
 APP = "classification"                                                       # Do not change! mode choide: "classification", "imagecap", "vqa". Currently "imagecap" and "vqa" are not supported.
 CATAGORIES = ["object", "part"]                                              # Do not change! concept categories that are chosen to detect: "object", "part", "scene", "material", "texture", "color"

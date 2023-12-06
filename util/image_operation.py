@@ -4,7 +4,7 @@ import skimage.measure
 import numpy as np
 import settings
 import cv2
-from scipy.misc import imresize
+from skimage.transform import resize as imresize
 from PIL import Image
 
 def imconcat(imgs, w, h, margin=0):
@@ -32,7 +32,7 @@ def imstack(imgs):
 
 
 def vis_cam_mask(cam_mat, org_img, vis_size, font_text=None):
-    cam_mask = 255 * imresize(cam_mat, (settings.IMG_SIZE, settings.IMG_SIZE), mode="F")
+    cam_mask = 255 * imresize(cam_mat, (settings.IMG_SIZE, settings.IMG_SIZE))
     cam_mask = cv2.applyColorMap(np.uint8(cam_mask), cv2.COLORMAP_JET)[:, :, ::-1]
     vis_cam = cam_mask * 0.5 + org_img * 0.5
     vis_cam = Image.fromarray(vis_cam.astype(np.uint8))
@@ -86,7 +86,8 @@ def headline2(captions, vis_size, height, width, margin=3):
     font = ImageFont.truetype(settings.FONT_PATH, settings.FONT_SIZE)
     for i in range(len(captions)):
         label = captions[i]
-        fw, fh = draw.textsize(label)
+        fw = draw.textlength(label)
+        fh = settings.FONT_SIZE
         if i == 0:
             draw.text(((vis_size * 2 - fw*1.85) / 2, (height - fh*1.85) / 2), label, font=font, fill=(0, 0, 0, 255))
         else:

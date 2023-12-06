@@ -8,20 +8,32 @@ from util.feature_decoder import SingleSigmoidFeatureClassifier
 from util.image_operation import *
 from PIL import Image
 import numpy as np
-from scipy.misc import imresize, imread
+from skimage.transform import resize as imresize
 from visualize.plot import random_color
 from torch.autograd import Variable as V
 import torch
 
+from torchvision import transforms as T
+
+from imageio.v2 import imread
 
 model = loadmodel()
 fo = FeatureOperator()
 
 features, _ = fo.feature_extraction(model=model)
 
+print(fo.data.label[1])
+# raise
+
 for layer_id, layer in enumerate(settings.FEATURE_NAMES):
+    print("Pat: Before Signle Sigmoid")
     feat_clf = SingleSigmoidFeatureClassifier(feature=features[layer_id], layer=layer, fo=fo)
     feat_clf.load_snapshot(14, unbiased=True)
+    np.savez(
+        os.path.join(settings.OUTPUT_FOLDER, "valid_concept.npy"),
+        valid_concepts=feat_clf.valid_concepts,
+        concept_information=fo.data.label
+    )
 
     if not settings.GRAD_CAM:
         fo.weight_decompose(model, feat_clf, feat_labels=[l['name'] for l in fo.data.label])
@@ -38,10 +50,16 @@ for layer_id, layer in enumerate(settings.FEATURE_NAMES):
 
             # feature extraction
             org_img = imread(image_file)
-            org_img = imresize(org_img, (settings.IMG_SIZE, settings.IMG_SIZE))
+
+            # pat's comment: this resize thing leads to wrong results
+            # org_img = imresize(org_img, (settings.IMG_SIZE, settings.IMG_SIZE))
+            assert org_img.shape[:2] == (settings.IMG_SIZE, settings.IMG_SIZE)
             if org_img.shape.__len__() == 2:
+                raise
                 org_img = org_img[:, :, None].repeat(3, axis=2)
             img_feat, img_grad, prediction_ind, prediction = fo.single_feature_extraction(model, org_img)
+            print(f"[image_ind={image_ind}] prediction_ind={prediction_ind} ({prediction})")
+
             if settings.COMPRESSED_INDEX:
                 try:
                     labels = [fo.data.label[concept] for concept in feat_clf.valid_concepts]
@@ -50,16 +68,22 @@ for layer_id, layer in enumerate(settings.FEATURE_NAMES):
 
             else:
                 labels = fo.data.label
+            # pat's comment: `u=512` is the number of dimensions.
             h, w, u = img_feat.shape
 
             # feature classification
             seg_resolution = settings.SEG_RESOLUTION
             img_feat_resized = np.zeros((seg_resolution, seg_resolution, u))
             for i in range(u):
-                img_feat_resized[:, :, i] = imresize(img_feat[:, :, i], (seg_resolution, seg_resolution), mode="F")
+                img_feat_resized[:, :, i] = imresize(img_feat[:, :, i], (seg_resolution, seg_resolution))
+
+            assert img_feat_resized.shape == img_feat.shape
+            img_feat_resized = img_feat.copy()
             img_feat_resized.shape = (seg_resolution * seg_resolution, u)
+            np.save("./tmp/image_feat.npy", img_feat)
 
             concept_predicted = feat_clf.fc(V(torch.FloatTensor(img_feat_resized)))
+            print(f"max(concept_predicted)={torch.max(concept_predicted)}")
             concept_predicted = concept_predicted.data.numpy().reshape(seg_resolution, seg_resolution, -1)
             # concept_predicted_reg = (concept_predicted - np.min(concept_predicted, 2, keepdims=True)) / np.max(
             #     concept_predicted, 2, keepdims=True)
@@ -70,12 +94,17 @@ for layer_id, layer in enumerate(settings.FEATURE_NAMES):
             # feature visualization
             vis_size = settings.IMG_SIZE
             margin = int(vis_size / 30)
+
+            print(f"img_feat.shape={img_feat.shape}")
+            print(f"img_grad.shape={img_grad.shape}")
+            # raise
             img_cam = fo.cam_mat(img_feat * img_grad.mean((0, 1))[None, None, :], above_zero=False)
             vis_cam = vis_cam_mask(img_cam, org_img, vis_size)
             CONCEPT_CAM_TOPN = settings.BASIS_NUM
             CONCEPT_CAM_BOTTOMN = 0
 
             if settings.GRAD_CAM:
+                raise
                 weight_clf = feat_clf.fc.weight.data.numpy()
                 weight_concept = weight_clf  # np.maximum(weight_clf, 0)
                 weight_concept = weight_concept / np.linalg.norm(weight_concept, axis=1)[:, None]
@@ -99,10 +128,10 @@ for layer_id, layer in enumerate(settings.FEATURE_NAMES):
                 scores_topn = coefficients[0][inds]
                 contribution = qcas[inds]
             else:
-                weight_label, weight_concept = fo.weight_extraction(model, feat_clf)
+                _, weight_concept = fo.weight_extraction(model, feat_clf)
 
                 rankings, errvar, coefficients, residuals_T = np.load(
-                    os.path.join(settings.OUTPUT_FOLDER, "decompose.npy"))
+                    os.path.join(settings.OUTPUT_FOLDER, "decompose.npy"), allow_pickle=True)
                 ranking = rankings[prediction_ind].astype(int)
                 residual = residuals_T.T[prediction_ind]
                 d_e = np.linalg.norm(residual) ** 2
@@ -110,6 +139,8 @@ for layer_id, layer in enumerate(settings.FEATURE_NAMES):
                     [coefficients[prediction_ind][:settings.BASIS_NUM, None] * weight_concept[ranking],
                      residual[None, :]])
                 a = img_feat.mean((0, 1))
+                print(f"shape(img_feat)={img_feat.shape}")
+                print(f"shape(a)={a.shape}")
                 a /= np.linalg.norm(a)
                 qcas = np.dot(component_weights, a)
                 combination_score = sum(qcas)
@@ -117,22 +148,34 @@ for layer_id, layer in enumerate(settings.FEATURE_NAMES):
                 concept_masks_ind = ranking[inds]
                 scores_topn = coefficients[prediction_ind][inds]
                 contribution = qcas[inds]
+                print(contribution)
 
+            # raise
 
             concept_masks = concept_predicted[:, :, concept_masks_ind]
+            print(f"score_topn={scores_topn}")
+            np.save("./tmp/concept_masks", concept_masks)
             concept_masks = concept_masks * ((scores_topn > 0) * 1)[None, None, :]
             concept_masks = (np.maximum(concept_masks, 0)) / np.max(concept_masks)
+            np.save("./tmp/concept_masks_processed", concept_masks)
+            print(f"concept_masks.shape={concept_masks.shape}")
+
+            raise
+
 
             vis_concept_cam = []
             for i in range(CONCEPT_CAM_TOPN + CONCEPT_CAM_BOTTOMN):
                 vis_concept_cam.append(vis_cam_mask(concept_masks[:, :, i], org_img, vis_size, font_text=None))
 
-            vis_img = Image.fromarray(org_img).resize((vis_size, vis_size), resample=Image.BILINEAR)
+            print(f"org_img.shape={org_img.shape}   : vis_size={vis_size}")
+            print(f"> min(org_img)={np.min(org_img)}; max(org_img)={np.max(org_img)}")
+            vis_img = Image.fromarray((org_img * 255).astype(np.uint8))
+            vis_img = vis_img.resize((vis_size, vis_size), resample=Image.BILINEAR)
             vis_bm = big_margin(vis_size)
-            vis = imconcat([vis_img, vis_cam, vis_bm] + vis_concept_cam[:3], vis_size, vis_size, margin=margin)
+            vis = imconcat([vis_img, vis_cam, vis_bm] + vis_concept_cam[:CONCEPT_CAM_TOPN], vis_size, vis_size, margin=margin)
             captions = [
                 "%s(%4.2f%%)" % (labels[concept_masks_ind[i]]['name'], contribution[i] * 100 / combination_score)
-                for i in range(3)]
+                for i in range(CONCEPT_CAM_TOPN)]
             captions = ["%s(%.2f) " % (prediction, combination_score)] + captions
             vis_headline = headline2(captions, vis_size, vis.height // 5, vis.width, margin=margin)
             vis = imstack([vis_headline, vis])
