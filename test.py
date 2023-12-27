@@ -130,8 +130,9 @@ for layer_id, layer in enumerate(settings.FEATURE_NAMES):
             else:
                 _, weight_concept = fo.weight_extraction(model, feat_clf)
 
-                rankings, errvar, coefficients, residuals_T = np.load(
-                    os.path.join(settings.OUTPUT_FOLDER, "decompose.npy"), allow_pickle=True)
+                data = np.load(os.path.join(settings.OUTPUT_FOLDER, "decompose.npy.npz"))
+                rankings, errvar, coefficients, residuals_T = data["rankings"], data["errvar"], data["coefficients"], data["residuals_T"]
+
                 ranking = rankings[prediction_ind].astype(int)
                 residual = residuals_T.T[prediction_ind]
                 d_e = np.linalg.norm(residual) ** 2
@@ -150,18 +151,21 @@ for layer_id, layer in enumerate(settings.FEATURE_NAMES):
                 contribution = qcas[inds]
                 print(contribution)
 
-            # raise
-
             concept_masks = concept_predicted[:, :, concept_masks_ind]
             print(f"score_topn={scores_topn}")
-            np.save("./tmp/concept_masks", concept_masks)
+
+            np.save(os.path.join(settings.OUTPUT_FOLDER, "concept_masks"), concept_masks)
             concept_masks = concept_masks * ((scores_topn > 0) * 1)[None, None, :]
             concept_masks = (np.maximum(concept_masks, 0)) / np.max(concept_masks)
-            np.save("./tmp/concept_masks_processed", concept_masks)
-            print(f"concept_masks.shape={concept_masks.shape}")
 
-            raise
-
+            np.save(
+                os.path.join(settings.OUTPUT_FOLDER, "concept_masks_processed"),
+                concept_masks
+            )
+            np.save(
+                os.path.join(settings.OUTPUT_FOLDER, "concept_masks_ind"),
+                concept_masks_ind
+            )
 
             vis_concept_cam = []
             for i in range(CONCEPT_CAM_TOPN + CONCEPT_CAM_BOTTOMN):
@@ -169,7 +173,9 @@ for layer_id, layer in enumerate(settings.FEATURE_NAMES):
 
             print(f"org_img.shape={org_img.shape}   : vis_size={vis_size}")
             print(f"> min(org_img)={np.min(org_img)}; max(org_img)={np.max(org_img)}")
-            vis_img = Image.fromarray((org_img * 255).astype(np.uint8))
+            vis_img = Image.fromarray(
+                imread(image_file)
+            )
             vis_img = vis_img.resize((vis_size, vis_size), resample=Image.BILINEAR)
             vis_bm = big_margin(vis_size)
             vis = imconcat([vis_img, vis_cam, vis_bm] + vis_concept_cam[:CONCEPT_CAM_TOPN], vis_size, vis_size, margin=margin)
