@@ -42,7 +42,7 @@ class FeatureDataset(Dataset):
                         pixels.append(label_group)
 
                 for i, pixel in enumerate(pixels):
-                    pixels[i] = imresize(pixel[0], (settings.SEG_RESOLUTION, settings.SEG_RESOLUTION), mode='F').astype(int)
+                    pixels[i] = imresize(pixel[0], (settings.SEG_RESOLUTION, settings.SEG_RESOLUTION)).astype(int)
 
                 labels = np.array(pixels)
                 if len(labels) == 2:
