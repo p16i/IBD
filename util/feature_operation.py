@@ -346,12 +346,19 @@ class FeatureOperator:
 
     def weight_decompose(self, model, feat_clf, feat_labels=None):
         weight_label, weight_concept = self.weight_extraction(model, feat_clf)
-        filename = os.path.join(settings.OUTPUT_FOLDER, "decompose.npy")
+        filename = os.path.join(settings.OUTPUT_FOLDER, "decompose.npy.npz")
         if os.path.exists(filename):
-            rankings, errvar, coefficients, residuals_T = np.load(filename, allow_pickle=True)
+            data = np.load(filename)
+            rankings, errvar, coefficients, residuals_T = data["rankings"], data["errvar"], data["coefficients"], data["residuals_T"]
         else:
             rankings, errvar, coefficients, residuals = self.decompose_Gram_Schmidt(weight_concept, weight_label, prediction_ind=None, MAX=settings.BASIS_NUM)
-            np.save(filename, (rankings, errvar, coefficients, residuals.T))
+            np.savez(
+                filename,
+                rankings=rankings,
+                errvar=errvar, coefficients=coefficients,
+                residuals_T=residuals.T
+            )
+
             # for i in range(len(weight_label)):
             #     residuals[i] = weight_label[i] - np.matmul(ws[i][None, :], weight_concept[rankings[i, :].astype(int)])
         print("Valid_concepts", feat_clf.valid_concepts)
